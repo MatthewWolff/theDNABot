@@ -1,3 +1,0 @@
-# Temp
-# GeneBot
-# GeneBot
