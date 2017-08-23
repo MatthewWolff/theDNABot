@@ -5,7 +5,6 @@ from subprocess import check_output
 import random
 from responses import response
 from time import sleep
-from StdSuites.Text_Suite import word
 import re
 
 # Will tweet in response to people who tweet/retweet #genetics
