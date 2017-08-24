@@ -92,14 +92,14 @@ def respond(tweet):  # provide custom translation or a full translation of their
             to_tweet = divideTweet(translated, username)
             most_recent = None
             for new_tweet in to_tweet:
-                print("translated " + new_tweet + "\n")
-#                 most_recent = api.update_status(status = new_tweet, 
-#                                   in_reply_to_status_id = (tweet.id if most_recent is None else most_recent.id))
+#                 print("translated " + new_tweet + "\n")
+                most_recent = api.update_status(status = new_tweet, 
+                                  in_reply_to_status_id = (tweet.id if most_recent is None else most_recent.id))
         else:  # do a full convert of their handle, and then translate back the template strand
             response = doubleStrandedDNA(username)
             response += "\n(%s)" % dnaToWords(wordsToDNA(username))
 #             print("responded " + response + "\n")
-            # api.update_status(response, in_reply_to_status_id=tweet.id)
+            api.update_status(response, in_reply_to_status_id=tweet.id)
         
 def divideTweet(long_tweet, username):
     # 1 tweet
@@ -118,20 +118,17 @@ def divideTweet(long_tweet, username):
     elif(len(long_tweet) > two_tweets_length):
         return [handle + "(1/3) " + long_tweet[ :first_tweet_length],
                 my_handle + "(2/3) " + long_tweet[first_tweet_length : two_tweets_length],
-                my_handle + "(3/3) " + long_tweet[two_tweets_length : len(long_tweet)],
-                "%i %i %i" % (len(handle + "(1/3) " + long_tweet[ :first_tweet_length]),
-                              len(my_handle + "(2/3) " + long_tweet[first_tweet_length : two_tweets_length]),
-                              len(my_handle + "(3/3) " + long_tweet[two_tweets_length : len(long_tweet)]))]
+                my_handle + "(3/3) " + long_tweet[two_tweets_length : len(long_tweet)]]
     # 2 tweets
     else:
         return [handle + "(1/2) " + long_tweet[ : first_tweet_length],
-                my_handle + "(2/2) " + long_tweet[first_tweet_length : len(long_tweet)],
-                "%i %i " % (len(handle + "(1/2) " + long_tweet[ : first_tweet_length]),
-                            len(my_handle + "(2/2) " + long_tweet[first_tweet_length : len(long_tweet)]))]        
+                my_handle + "(2/2) " + long_tweet[first_tweet_length : len(long_tweet)]]        
 
 def main():
     for tweet in tweepy.Cursor(api.search, q='@theDNABot -filter:retweets', tweet_mode="extended").items():
         respond(tweet)
+        
+        ## DO NOT USE
 #     for tweet in tweepy.Cursor(api.search, q='#genetics -filter:retweets').items(50):
 #         filterAndTweet(tweet) 
 #     for tweet in tweepy.Cursor(api.search, q='#DNA -filter:retweets').items(50):
