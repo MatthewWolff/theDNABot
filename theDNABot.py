@@ -30,7 +30,7 @@ def dnaToWords(string):
 def doubleStrandedDNA(string):
     return check_output(["Rscript doubleStrandedDNA.r " + string], shell=True)
 
-def getResponse(username, user_DNA, specific = "random"):
+def getResponse(username, user_DNA, specific="random"):
     if(specific != "random"):
         return response[specific].format(handle=username, DNA=user_DNA)
     base_response = random.choice(response)
@@ -38,15 +38,113 @@ def getResponse(username, user_DNA, specific = "random"):
 
 def clearTweets():
     for status in tweepy.Cursor(api.user_timeline).items():
-           try:
+        try:
             api.destroy_status(status.id)
-           except:
-               print "Failed to delete:", status.id
+        except:
+            print "Failed to delete:", status.id
                
 def isNew(username):  # check if name is new, if not, ret false, else, add + ret true
     with open("tweetedNames.txt", "rb") as used_names:
         prev_tweeted = used_names.readlines()
     is_not_present = (username + "\n") not in prev_tweeted
+    if(is_not_present):
+        with open("tweetedNames.txt", "ab") as used_names:
+            used_names.write(username + "\n")
+    return is_not_present
+
+def isReplied(tweet):  # check if replied. if not, add to list and proceed to reply
+    with open("repliedTweets.txt", "rb") as replied_tweets:
+        replies = replied_tweets.readlines()
+    is_replied = (str(tweet.id) + "\n") in replies
+    if(not is_replied):
+        with open("repliedTweets.txt", "ab") as replied_tweets:
+            replied_tweets.write(str(tweet.id) + "\n")
+    return is_replied
+    
+def filterAndTweet(tweet):
+    username = tweet.user.screen_name
+    if(isNew(username) and not tweet.retweeted):  # try and ignore retweets
+        # make R calls
+        user_DNA = wordsToDNA(username)
+        reverse_DNA = dnaToWords(user_DNA)
+        # Prevent errors
+        if(user_DNA == "" or len(user_DNA) <= 6):  # if username can't be translated
+            print("ERROR: could not translate " + username)
+            return
+        tweet_response = getResponse(username, user_DNA)
+        try:
+            api.update_status(status=tweet_response, in_reply_to_status_id=tweet.id)
+        except TweepError as inst:  # TODO: figure out how to catch error reasons?
+            print("ERROR: ", inst.message[0]['code'], tweet_response)
+            return
+        print("found tweet and tweeted at " + username)
+
+def respond(tweet):  # provide custom translation or a full translation of their username
+    username = tweet.user.screen_name
+    if(not isReplied(tweet)):
+        if("translate" in tweet.full_text):
+            # grab everything after the "translate:"
+            expr = re.compile(".+translate")
+            start = expr.search(tweet.full_text).end()
+            translated = wordsToDNA(tweet.full_text[start : len(tweet.full_text)]) 
+            
+            # translated can be up 3 tweets of text... break apart and reply
+            to_tweet = divideTweet(translated, username)
+            most_recent = None
+            for new_tweet in to_tweet:
+                print("translated " + new_tweet + "\n")
+#                 most_recent = api.update_status(status = new_tweet, 
+#                                   in_reply_to_status_id = (tweet.id if most_recent is None else most_recent.id))
+        else:  # do a full convert of their handle, and then translate back the template strand
+            response = doubleStrandedDNA(username)
+            response += "\n(%s)" % dnaToWords(wordsToDNA(username))
+#             print("responded " + response + "\n")
+            # api.update_status(response, in_reply_to_status_id=tweet.id)
+        
+def divideTweet(long_tweet, username):
+    # 1 tweet
+    handle = "@" + username + " "
+    my_handle = "@theDNABot "
+    numbered = len("(x/y) ")
+    
+    single_tweet_length = (TWEET_MAX_LENGTH - len(handle))
+    first_tweet_length = (TWEET_MAX_LENGTH - len(handle) - numbered)
+    self_tweet_length = (TWEET_MAX_LENGTH - len(my_handle) - numbered)
+    two_tweets_length = first_tweet_length + self_tweet_length
+    
+    if(len(long_tweet) <= single_tweet_length):
+        return [handle + long_tweet]
+    # 3 tweets
+    elif(len(long_tweet) > two_tweets_length):
+        return [handle + "(1/3) " + long_tweet[ :first_tweet_length],
+                my_handle + "(2/3) " + long_tweet[first_tweet_length : two_tweets_length],
+                my_handle + "(3/3) " + long_tweet[two_tweets_length : len(long_tweet)],
+                "%i %i %i" % (len(handle + "(1/3) " + long_tweet[ :first_tweet_length]),
+                              len(my_handle + "(2/3) " + long_tweet[first_tweet_length : two_tweets_length]),
+                              len(my_handle + "(3/3) " + long_tweet[two_tweets_length : len(long_tweet)]))]
+    # 2 tweets
+    else:
+        return [handle + "(1/2) " + long_tweet[ : first_tweet_length],
+                my_handle + "(2/2) " + long_tweet[first_tweet_length : len(long_tweet)],
+                "%i %i " % (len(handle + "(1/2) " + long_tweet[ : first_tweet_length]),
+                            len(my_handle + "(2/2) " + long_tweet[first_tweet_length : len(long_tweet)]))]        
+
+def main():
+    for tweet in tweepy.Cursor(api.search, q='@theDNABot -filter:retweets', tweet_mode="extended").items():
+        respond(tweet)
+#     for tweet in tweepy.Cursor(api.search, q='#genetics -filter:retweets').items(50):
+#         filterAndTweet(tweet) 
+#     for tweet in tweepy.Cursor(api.search, q='#DNA -filter:retweets').items(50):
+#         filterAndTweet(tweet)
+if __name__ == '__main__': 
+#   api.update_status(status=(doubleStrandedDNA("Hello, World!")))
+#     while(1):  # run every 15 minutes
+    main()  
+#         sleep(900)
+        # nohup python theDNABot.py &
+        # tail -f nohup.out 
+        
+prev_tweeted
     if(is_not_present):
         with open("tweetedNames.txt", "ab") as used_names:
             used_names.write(username + "\n")
