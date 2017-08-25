@@ -1,11 +1,17 @@
+# -*- coding: utf-8 -*-
 import tweepy
 import io
-from keys import key
+from keys import key, email_key
 from subprocess import check_output
 import random
 from responses import response
 from time import sleep
-import re
+import re 
+import urllib2  # for querying data to scrape
+from bs4 import BeautifulSoup  # for WebScraping
+from time import strftime
+from date_list import dates
+import smtplib
 
 # Will tweet in response to people who tweet/retweet #genetics
 # if someone tweets at bot, translate their handle, or if they ask for a custom 
@@ -19,7 +25,14 @@ auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
 auth.set_access_token(access_token, access_token_secret)
 api = tweepy.API(auth)
 
-TWEET_MAX_LENGTH = 180
+TWEET_MAX_LENGTH = 140
+RESET = "\033[0m"
+RED = "\033[31m"      
+BOLDWHITE = "\033[1m\033[37m"      
+CLEAR = "\033[2J"  # clears the terminal screen
+CYAN = "\033[36m"
+YELLOW = "\033[33m"
+# TODO: add more colors?
 
 def wordsToDNA(string):
     return check_output(["Rscript wordsToDNA.r " + string], shell=True)
@@ -29,6 +42,68 @@ def dnaToWords(string):
 
 def doubleStrandedDNA(string):
     return check_output(["Rscript doubleStrandedDNA.r " + string], shell=True)
+
+def scrubDefinition(definition_entry, date):
+    # format into proper, small strings
+    definition_entry = re.sub("(?!</?strong>)<.+?>", "", definition_entry)  # remove formatting, ignoring strongs
+    definition_entry = re.sub("(?<=<strong>) ?\w ?", "", definition_entry)  # remove letters inside of strongs
+    definition_entry = re.sub("<.+?>", "", definition_entry)  # remove remaining strongs
+    definition_entry = re.sub(":|;", ";:", definition_entry)  # create beginning and end indicators
+    error_check = re.sub("[\xc2\xa0b\xc2\xa0]", "%ABORT%", definition_entry)  # IN CASE WONKY ENCODINGS?
+#     if("%ABORT%" in error_check):
+#         error_report = "For the " + date + " word of the day, invalid characters were encoded:\n" + definition_entry
+#         alert(subject="Invalid Character Encodings", text=error_report)
+    short_definitions = re.findall(":.+?(?:$|;)", definition_entry)  # split apart
+    for i in range(0, len(short_definitions)):
+        short_definitions[i] = re.sub(":|;", "", short_definitions[i]).strip()  # remove indicators and trim
+    for x in short_definitions:
+        print(x)
+    return(short_definitions)
+
+def getWOTD(date):
+    merriam_word_of_day_URL = "https://www.merriam-webster.com/word-of-the-day/" + date    
+    page = urllib2.urlopen(merriam_word_of_day_URL)
+    soup = BeautifulSoup(page, "html.parser")
+    return soup.find("div", class_="word-and-pronunciation").h1.string
+    
+def getBackupWOTD(date):
+    date_backup = re.sub("-", "/", date)
+    dictionary_word_of_day_URL = "http://www.dictionary.com/wordoftheday/" + date_backup
+    page_backup = urllib2.urlopen(dictionary_word_of_day_URL)
+    soup_backup = BeautifulSoup(page_backup, "html.parser")
+    word_of_the_day_backup_raw = soup_backup.find("div", class_="origin-header")
+    return re.findall("(?<=<strong>).+?(?=</strong>)", str(word_of_the_day_backup_raw))[0]
+
+def prepareWOTD(word_of_the_day):
+    daily_DNA = "Daily DNA: %s\n" % word_of_the_day
+    daily_DNA += doubleStrandedDNA(word_of_the_day)
+    daily_DNA += "\n(%s)" % dnaToWords(wordsToDNA(word_of_the_day))
+    return(daily_DNA)
+
+def wordOfTheDay(date="today"):
+    if(date is "today"):
+        date = strftime("%Y-%m-%d")
+    
+    # retrieve data & clean
+    word_of_the_day = getWOTD(date)
+    word_of_the_day_backup = getBackupWOTD(date)
+
+#    # NOTE: Definitions are shelved due to lack of space in tweet
+#     definitions_raw = str(soup.find("div", class_="wod-definition-container").p)
+#     definitions = scrubDefinition(definitions_raw, date)
+     
+    daily_DNA = prepareWOTD(word_of_the_day)
+    daily_DNA_backup = prepareWOTD(word_of_the_day_backup)
+
+    if(len(daily_DNA) <= TWEET_MAX_LENGTH):
+#         api.update_status(status = daily_DNA)
+        print YELLOW + "defined " + BOLDWHITE + daily_DNA + RESET
+    elif(len(daily_DNA_backup) <= TWEET_MAX_LENGTH):
+#         api.update_status(status = daily_DNA_backup)
+        print YELLOW + "defined " + BOLDWHITE + daily_DNA_backup + RESET
+    else:
+        content = "On %s, was unable to print daily words %s or %s due to length..." % (date, daily_DNA, daily_DNA_backup)
+        alert(subject="Daily Words were too long", text=content)
 
 def getResponse(username, user_DNA, specific="random"):
     if(specific != "random"):
@@ -77,7 +152,7 @@ def filterAndTweet(tweet):
         except TweepError as inst:  # TODO: figure out how to catch error reasons?
             print("ERROR: ", inst.message[0]['code'], tweet_response)
             return
-        print("found tweet and tweeted at " + username)
+        print(YELLOW + "found tweet and tweeted at " + BOLDWHITE + username + RESET)
 
 def respond(tweet):  # provide custom translation or a full translation of their username
     username = tweet.user.screen_name
@@ -92,13 +167,13 @@ def respond(tweet):  # provide custom translation or a full translation of their
             to_tweet = divideTweet(translated, username)
             most_recent = None
             for new_tweet in to_tweet:
-#                 print("translated " + new_tweet + "\n")
-                most_recent = api.update_status(status = new_tweet, 
-                                  in_reply_to_status_id = (tweet.id if most_recent is None else most_recent.id))
+                print(YELLOW + "translated " + BOLDWHITE + new_tweet + RESET +"\n")
+                most_recent = api.update_status(status=new_tweet,
+                                  in_reply_to_status_id=(tweet.id if most_recent is None else most_recent.id))
         else:  # do a full convert of their handle, and then translate back the template strand
             response = doubleStrandedDNA(username)
             response += "\n(%s)" % dnaToWords(wordsToDNA(username))
-#             print("responded " + response + "\n")
+            print(YELLOW + "responded " + BOLDWHITE + response + RESET + "\n")
             api.update_status(response, in_reply_to_status_id=tweet.id)
         
 def divideTweet(long_tweet, username):
@@ -122,21 +197,27 @@ def divideTweet(long_tweet, username):
     # 2 tweets
     else:
         return [handle + "(1/2) " + long_tweet[ : first_tweet_length],
-                my_handle + "(2/2) " + long_tweet[first_tweet_length : len(long_tweet)]]        
+                my_handle + "(2/2) " + long_tweet[first_tweet_length : len(long_tweet)]] 
+        
+def alert(subject="Error Occurred", text="TheDNABot has encountered an error during execution."):
+    content = 'Subject: %s\n\n%s' % (subject, text)
+    mail = smtplib.SMTP('smtp.gmail.com', 587)
+    mail.ehlo()
+    mail.starttls()
+    mail.login(email_key["username"], email_key["password"])
+    mail.sendmail(email_key["username"], email_key["destination"], content) 
+    mail.close()
+    print(BOLDWHITE + "ERROR OCCURRED, EMAIL SENT" + RESET)       
 
 def main():
-    for tweet in tweepy.Cursor(api.search, q='@theDNABot -filter:retweets', tweet_mode="extended").items():
+    for tweet in tweepy.Cursor(api.search, q='@theDNABot -filter:retweets', tweet_mode="extended").items(25):
         respond(tweet)
         
-        ## DO NOT USE
-#     for tweet in tweepy.Cursor(api.search, q='#genetics -filter:retweets').items(50):
-#         filterAndTweet(tweet) 
-#     for tweet in tweepy.Cursor(api.search, q='#DNA -filter:retweets').items(50):
-#         filterAndTweet(tweet)
 if __name__ == '__main__': 
-#   api.update_status(status=(doubleStrandedDNA("Hello, World!")))
+#     for date in dates:
 #     while(1):  # run every 15 minutes
-    main()  
+#     main()  
+        wordOfTheDay()
 #         sleep(900)
         # nohup python theDNABot.py &
         # tail -f nohup.out 
