@@ -11,6 +11,7 @@ import urllib2  # for querying data to scrape
 from bs4 import BeautifulSoup  # for WebScraping
 from time import strftime
 from date_list import dates
+from datetime import datetime
 import smtplib
 
 # Will tweet in response to people who tweet/retweet #genetics
@@ -43,8 +44,30 @@ def dnaToWords(string):
 def doubleStrandedDNA(string):
     return check_output(["Rscript doubleStrandedDNA.r " + string], shell=True)
 
-def scrubDefinition(definition_entry, date):
+def getDate(date_string):
+    date_values = re.split("-",date_string)
+    date_values = [int(i) for i in date_values]
+    return datetime(date_values[0],date_values[1],date_values[2])
+
+def isTweetedWOTD():
+    current_day = getDate(strftime("%Y-%m-%d"))
+    for status in tweepy.Cursor(api.user_timeline).items():
+        creation_day_raw = str(status.created_at)[:len(strftime("%Y-%m-%d"))]
+        creation_day = getDate(creation_day_raw)
+        if "Daily DNA: " in status.text and current_day == creation_day:
+            return True
+        elif creation_day < current_day: # passed through relevant timeframe
+            return False
+    return False
+
+def scrubDefinitions(date):
+    # NOTE: Definitions are shelved due to lack of space in tweet
+    #     only implemented for Merriam-Webster (primary WOTD)
     # format into proper, small strings
+    merriam_word_of_day_URL = "https://www.merriam-webster.com/word-of-the-day/" + date    
+    page = urllib2.urlopen(merriam_word_of_day_URL)
+    soup = BeautifulSoup(page, "html.parser")
+    definitions_raw = str(soup.find("div", class_="wod-definition-container").p)
     definition_entry = re.sub("(?!</?strong>)<.+?>", "", definition_entry)  # remove formatting, ignoring strongs
     definition_entry = re.sub("(?<=<strong>) ?\w ?", "", definition_entry)  # remove letters inside of strongs
     definition_entry = re.sub("<.+?>", "", definition_entry)  # remove remaining strongs
@@ -84,22 +107,17 @@ def wordOfTheDay(date="today"):
     if(date is "today"):
         date = strftime("%Y-%m-%d")
     
-    # retrieve data & clean
+    # retrieve data & clean word and back up word (in case main is too long)
     word_of_the_day = getWOTD(date)
     word_of_the_day_backup = getBackupWOTD(date)
-
-#    # NOTE: Definitions are shelved due to lack of space in tweet
-#     definitions_raw = str(soup.find("div", class_="wod-definition-container").p)
-#     definitions = scrubDefinition(definitions_raw, date)
-     
     daily_DNA = prepareWOTD(word_of_the_day)
     daily_DNA_backup = prepareWOTD(word_of_the_day_backup)
 
     if(len(daily_DNA) <= TWEET_MAX_LENGTH):
-#         api.update_status(status = daily_DNA)
+        api.update_status(status = daily_DNA)
         print YELLOW + "defined " + BOLDWHITE + daily_DNA + RESET
     elif(len(daily_DNA_backup) <= TWEET_MAX_LENGTH):
-#         api.update_status(status = daily_DNA_backup)
+        api.update_status(status = daily_DNA_backup)
         print YELLOW + "defined " + BOLDWHITE + daily_DNA_backup + RESET
     else:
         content = "On %s, was unable to print daily words %s or %s due to length..." % (date, daily_DNA, daily_DNA_backup)
@@ -167,14 +185,14 @@ def respond(tweet):  # provide custom translation or a full translation of their
             to_tweet = divideTweet(translated, username)
             most_recent = None
             for new_tweet in to_tweet:
-                print(YELLOW + "translated " + BOLDWHITE + new_tweet + RESET +"\n")
-                most_recent = api.update_status(status=new_tweet,
-                                  in_reply_to_status_id=(tweet.id if most_recent is None else most_recent.id))
+                print(YELLOW + "translated " + BOLDWHITE + new_tweet + RESET + "\n")
+#                 most_recent = api.update_status(status=new_tweet,
+#                                   in_reply_to_status_id=(tweet.id if most_recent is None else most_recent.id))
         else:  # do a full convert of their handle, and then translate back the template strand
             response = doubleStrandedDNA(username)
             response += "\n(%s)" % dnaToWords(wordsToDNA(username))
             print(YELLOW + "responded " + BOLDWHITE + response + RESET + "\n")
-            api.update_status(response, in_reply_to_status_id=tweet.id)
+#             api.update_status(response, in_reply_to_status_id=tweet.id)
         
 def divideTweet(long_tweet, username):
     # 1 tweet
@@ -215,10 +233,11 @@ def main():
         
 if __name__ == '__main__': 
 #     for date in dates:
-#     while(1):  # run every 15 minutes
-#     main()  
-        wordOfTheDay()
-#         sleep(900)
+    while(1):  # run every 15 minutes
+        if not isTweetedWOTD():
+            wordOfTheDay()
+        main()  
+        sleep(900)
         # nohup python theDNABot.py &
         # tail -f nohup.out 
         
