@@ -32,16 +32,13 @@ CLEAR = "\033[2J"  # clears the terminal screen
 CYAN = "\033[36m"
 YELLOW = "\033[33m"
 
-@staticmethod
 def wordsToDNA(string):
     string = re.sub("'", "", string)  # remove single quotes
     return check_output(["Rscript wordsToDNA.r " + string], shell=True)
 
-@staticmethod
 def dnaToWords(string):
     return check_output(["Rscript dnaToWords.r " + string], shell=True)
 
-@staticmethod
 def doubleStrandedDNA(string):
     string = re.sub("'", "", string)  # remove single quotes
     return check_output(["Rscript doubleStrandedDNA.r " + string], shell=True)
