@@ -1,16 +1,20 @@
-from responses import response
-from keys import key, email_key
 import tweepy
 import io
-from subprocess import check_output
-from time import sleep
+import smtplib
+import WordOfTheDay 
 import re 
 import urllib2  # for querying data to scrape
+import threading
 from bs4 import BeautifulSoup  # for WebScraping
 from time import strftime
 from datetime import datetime
-import smtplib
-import threading
+from subprocess import check_output
+from time import sleep
+from multiprocessing import Process
+
+from responses import response
+from keys import key, email_key
+
 
 # Will tweet in response to people who tweet/retweet #genetics
 # if someone tweets at bot, translate their handle, or if they ask for a custom 
@@ -25,12 +29,13 @@ auth.set_access_token(access_token, access_token_secret)
 api = tweepy.API(auth)
 
 TWEET_MAX_LENGTH = 140
-RESET = "\033[0m"
+
 RED = "\033[31m"      
+RESET = "\033[0m"
 BOLDWHITE = "\033[1m\033[37m"      
+YELLOW = "\033[33m"
 CLEAR = "\033[2J"  # clears the terminal screen
 CYAN = "\033[36m"
-YELLOW = "\033[33m"
 
 def wordsToDNA(string):
     string = re.sub("'", "", string)  # remove single quotes
@@ -58,68 +63,6 @@ def isTweetedWOTD():
         elif creation_day < current_day:  # passed through relevant timeframe
             return False
     return False
-
-def getWOTD(date):
-    merriam_word_of_day_URL = "https://www.merriam-webster.com/word-of-the-day/" + date    
-    page = urllib2.urlopen(merriam_word_of_day_URL)
-    soup = BeautifulSoup(page, "html.parser")
-    return soup.find("div", class_="word-and-pronunciation").h1.string
-    
-def getBackupWOTD(date):
-    date_backup = re.sub("-", "/", date)
-    dictionary_word_of_day_URL = "http://www.dictionary.com/wordoftheday/" + date_backup
-    page_backup = urllib2.urlopen(dictionary_word_of_day_URL)
-    soup_backup = BeautifulSoup(page_backup, "html.parser")
-    word_of_the_day_backup_raw = soup_backup.find("div", class_="origin-header")
-    return re.findall("(?<=<strong>).+?(?=</strong>)", str(word_of_the_day_backup_raw))[0]
-
-def getBackupWOTD2(date):
-    wordthink_word_of_day_URL = "http://www.wordthink.com/"
-    page = urllib2.urlopen(wordthink_word_of_day_URL)
-    soup = BeautifulSoup(page, "html.parser")
-    wotd_raw = soup.find("h1").next_sibling.next_sibling  # start at 
-    wotd = re.findall("(?<=<b>).+?(?=</b>.?<i>)", str(wotd_raw))[0].lower()
-    return wotd
-
-def prepareWOTD(word_of_the_day):
-    daily_DNA = "Daily DNA: %s\n" % word_of_the_day
-    daily_DNA += doubleStrandedDNA(word_of_the_day)
-    daily_DNA += "\n(%s)" % dnaToWords(wordsToDNA(word_of_the_day))
-    return(daily_DNA)
-
-def tweetWord(merriam, dictionary, wordthink):
-    if(len(merriam) <= TWEET_MAX_LENGTH):
-        print("Source: Merriam-Webster")
-        print YELLOW + "defined " + BOLDWHITE + merriam + RESET + "\n"
-        return api.update_status(status=merriam)
-    elif(len(dictionary) <= TWEET_MAX_LENGTH):
-        print("Source: Dictionary.com")
-        print YELLOW + "defined " + BOLDWHITE + dictionary + RESET + "\n"
-        return api.update_status(status=dictionary) 
-    elif(len(wordthink) <= TWEET_MAX_LENGTH):
-        print("Source: Wordthink")
-        print YELLOW + "defined " + BOLDWHITE + wordthink + RESET + "\n" 
-        return api.update_status(status=wordthink)
-    else:
-        return -1
-
-def wordOfTheDay(date="today"):
-    if(date is "today"):
-        date = strftime("%Y-%m-%d")
-    
-    # retrieve data & clean word and back up word (in case main is too long)
-    word_of_the_day = getWOTD(date)
-    wotd_backup = getBackupWOTD(date)
-    wotd_backup2 = getBackupWOTD2(date)
-    
-    daily_DNA = prepareWOTD(word_of_the_day)
-    daily_DNA_backup = prepareWOTD(wotd_backup)
-    daily_DNA_backup2 = prepareWOTD(wotd_backup2)
-
-    if(tweetWord(daily_DNA, daily_DNA_backup, daily_DNA_backup2) == -1):
-        content = "On %s, was unable to print daily words " % date
-        content += "%s or %s or %s due to length..." % (word_of_the_day, wotd_backup, wotd_backup2)
-        alert(subject="Daily Words were too long", text=content)
 
 def clearTweets():
     for status in tweepy.Cursor(api.user_timeline).items():
@@ -205,35 +148,40 @@ def alert(subject="Error Occurred", text="TheDNABot has encountered an error dur
     print(BOLDWHITE + "ERROR OCCURRED, EMAIL SENT" + RESET)       
 
 def dailyTweet():
-    '''daily tweet thread method'''
-    if not isTweetedWOTD():
-        wordOfTheDay()
-    sleep(3600)
+    '''daily tweet multi-processing method'''
+    while(1):
+        if not isTweetedWOTD():
+            daily_tweet = WordOfTheDay.getTweet()
+            if(daily_tweet == -1):
+                content = "On %s, was unable to print daily words " % date
+                content += "%s or %s or %s due to length..." % (word_of_the_day, wotd_backup, wotd_backup2)
+                alert(subject="Daily Words were too long", text=content)
+            else:
+                api.update_status(status=daily_tweet)
+        sleep(14400) # 4 hour wait
         
 def checkTweets():
-    '''tweet upkeep thread method'''
+    '''tweet upkeep multi-processing method'''
     while(1):
         for tweet in tweepy.Cursor(api.search, q='@theDNABot -filter:retweets', tweet_mode="extended").items(25):
             respond(tweet)
-        sleep(30)  # check every 30 seconds
+        sleep(30)
         
 if __name__ == '__main__': 
     
-    while(1):
-        for tweet in tweepy.Cursor(api.search, q='@theDNABot -filter:retweets', tweet_mode="extended").items(25):
-            respond(tweet)
-        if not isTweetedWOTD():
-            wordOfTheDay()
-        sleep(30)  
+     tweet_poll = Process(target = checkTweets)
+     tweet_poll.start()
+     wotd = Process(target = dailyTweet)
+     wotd.start()
 
-#     threads = []
-#     t = threading.Thread(target=dailyTweet())
-#     threads.append(t)
-#     t.start()
-#      
-#     t = threading.Thread(target=checkTweets())
-#     threads.append(t)
-#     t.start()
+    
         # nohup python theDNABot.py &
         # tail -f nohup.out 
+        
+        
+        
+        
+        
+        
+        
         
