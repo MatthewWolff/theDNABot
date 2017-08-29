@@ -149,6 +149,7 @@ def alert(subject="Error Occurred", text="TheDNABot has encountered an error dur
 
 def dailyTweet():
     '''daily tweet multi-processing method'''
+    print(CYAN + "Checking for daily tweet..." + RESET)
     while(1):
         if not isTweetedWOTD():
             daily_tweet = WordOfTheDay.getTweet()
@@ -162,6 +163,7 @@ def dailyTweet():
         
 def checkTweets():
     '''tweet upkeep multi-processing method'''
+    print(CYAN + "Beginning polling..." + RESET)
     while(1):
         for tweet in tweepy.Cursor(api.search, q='@theDNABot -filter:retweets', tweet_mode="extended").items(25):
             respond(tweet)
@@ -169,10 +171,10 @@ def checkTweets():
         
 if __name__ == '__main__': 
     
-     tweet_poll = Process(target = checkTweets)
-     tweet_poll.start()
      wotd = Process(target = dailyTweet)
      wotd.start()
+     tweet_poll = Process(target = checkTweets)
+     tweet_poll.start()
 
     
         # nohup python theDNABot.py &
