@@ -189,7 +189,7 @@ def checkTweets():
     print(CYAN + "Beginning polling..." + RESET)
     while(1):
         for tweet in tweepy.Cursor(api.search, q='@theDNABot -filter:retweets',
-                                   tweet_mode="extended").items(25):
+                                   tweet_mode="extended").items():
             respond(tweet)
         sleep(30)
         
