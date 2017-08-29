@@ -10,8 +10,6 @@ from datetime import datetime
 from subprocess import check_output
 from time import sleep
 from multiprocessing import Process
-
-from responses import response
 from keys import key, email_key
 
 
@@ -67,6 +65,7 @@ def clearTweets():
     for status in tweepy.Cursor(api.user_timeline).items():
         try:
             api.destroy_status(status.id)
+            print "deleted successfully"
         except:
             print "Failed to delete:", status.id
 
@@ -91,14 +90,25 @@ def respond(tweet):  # provide translation of custom message or username
                 translated = wordsToDNA(text[start:len(text)]) 
                 if len(translated) < 3:
                     response = "@{0} Sorry @{0}, ".format(username)
-                    resposne += "the translation was too short. Try avoiding "
+                    response += "the translation was too short. Try avoiding "
                     response += "the letters B,J,O,U,X,Z, or any emoji!"
-                    print RED + "Translation for "
-                    print "@%s failed - too short\n" % username + RESET
+                    error_msg = RED + "Translation for "
+                    error_msg += "@%s failed - too short\n" % username + RESET
+                    print error_msg
                     return api.update_status(response, tweet.id)
                 
                 # translated can be up 3 tweets of text... break apart and reply
                 to_tweet = divideTweet(translated, username)
+                if to_tweet == -1:
+                    response = "@{0} Sorry @{0}, ".format(username)
+                    response += "the translation was too long. Congrats on "
+                    response += "figuring out how to fit so many characters in"
+                    response += ", though!"
+                    error_msg = RED + "Translation for "
+                    error_msg += "@%s failed - too long\n" % username + RESET
+                    print error_msg
+                    return api.update_status(response, tweet.id)
+                
                 recent = None
                 for new_tweet in to_tweet:
                     print YELLOW + "translated " + BOLDWHITE + new_tweet + RESET
@@ -128,9 +138,14 @@ def divideTweet(long_tweet, username):
     first_tweet_length = (TWEET_MAX_LENGTH - len(handle) - numbered)
     self_tweet_length = (TWEET_MAX_LENGTH - len(my_handle) - numbered)
     two_tweets_length = first_tweet_length + self_tweet_length
+    three_tweets_length = two_tweets_length + self_tweet_length
     
+    # 1 tweet
     if(len(long_tweet) <= single_tweet_length):
         return [handle + long_tweet]
+    # too many characters (edge case)
+    elif(len(long_tweet) >= three_tweets_length):
+        return -1 
     # 3 tweets
     elif(len(long_tweet) > two_tweets_length):
         return [handle + "(1/3) "
@@ -180,10 +195,10 @@ def checkTweets():
         
 if __name__ == '__main__': 
     
-     wotd = Process(target=dailyTweet)
-     wotd.start()
-     tweet_poll = Process(target=checkTweets)
-     tweet_poll.start()
+    wotd = Process(target=dailyTweet)
+    wotd.start()
+    tweet_poll = Process(target=checkTweets)
+    tweet_poll.start()
 
     
         # nohup python theDNABot.py &
