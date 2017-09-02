@@ -1,13 +1,12 @@
+import WordOfTheDay
 import re
 import smtplib
+import tweepy
 from datetime import datetime, timedelta
+from keys import key, email_key
 from multiprocessing import Process
 from subprocess import check_output
 from time import sleep, strftime
-
-import WordOfTheDay
-import tweepy
-from keys import key, email_key
 
 # Will tweet in response to people who tweet/retweet #genetics
 # if someone tweets at bot, translate their handle, or if they ask for a custom 
@@ -64,6 +63,12 @@ def is_tweeted_wotd():
         elif creation_day < current_day:  # passed through relevant timeframe
             return False
     return False
+
+
+def is_waking_hours():
+    current_time = datetime.now().hour
+    early = 9  # 9 o'clock in the morning
+    return current_time >= early
 
 
 def clear_tweets():
@@ -184,7 +189,7 @@ def daily_tweet():
     """daily tweet multi-processing method"""
     print(CYAN + "Checking for daily tweet..." + RESET)
     while 1:
-        if not is_tweeted_wotd():
+        if not is_tweeted_wotd() and is_waking_hours():
             tweet = WordOfTheDay.get_tweet()
             if tweet == -1:
                 content = "Unable to print daily words "
@@ -205,6 +210,7 @@ def check_tweets():
 
 
 if __name__ == '__main__':
+    is_waking_hours()
     wotd = Process(target=daily_tweet)
     wotd.start()
     tweet_poll = Process(target=check_tweets)
