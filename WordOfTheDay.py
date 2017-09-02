@@ -31,11 +31,11 @@ def get_backup_wotd(date):
     return re.findall("(?<=<strong>).+?(?=</strong>)", str(word_raw))[0]
 
 
-def get_backup_wotd2(date):
+def get_backup_wotd2():
     wordthink_word_url = "http://www.wordthink.com/"
     page = urllib2.urlopen(wordthink_word_url)
     soup = BeautifulSoup(page, "html.parser")
-    word_raw = soup.find("h1").next_sibling.next_sibling  # start at 
+    word_raw = soup.find("h1").next_sibling.next_sibling
     return re.findall("(?<=<b>).+?(?=</b>.?<i>)", str(word_raw))[0].lower()
 
 

@@ -1,6 +1,6 @@
 import re
 import smtplib
-from datetime import datetime
+from datetime import datetime, timedelta
 from multiprocessing import Process
 from subprocess import check_output
 from time import sleep, strftime
@@ -55,8 +55,10 @@ def get_date(date_string):
 def is_tweeted_wotd():
     current_day = get_date(strftime("%Y-%m-%d"))
     for status in tweepy.Cursor(api.user_timeline).items():
-        creation_day_raw = str(status.created_at)[:len(strftime("%Y-%m-%d"))]
+        tweeted_at = status.created_at - timedelta(hours=5)  # twitter is ahead
+        creation_day_raw = str(tweeted_at)[:len(strftime("%Y-%m-%d"))]
         creation_day = get_date(creation_day_raw)
+
         if "Daily #DNA: " in status.text and current_day == creation_day:
             return True
         elif creation_day < current_day:  # passed through relevant timeframe
@@ -69,26 +71,26 @@ def clear_tweets():
         try:
             api.destroy_status(status.id)
             print "deleted successfully"
-        except:
+        except tweepy.TweepError:
             print "Failed to delete:", status.id
 
 
 def is_replied(tweet):  # check if replied. if not, add to list and reply
     with open("repliedTweets.txt", "rb") as replied_tweets:
         replies = replied_tweets.readlines()
-    is_replied = (str(tweet.id) + "\n") in replies
-    if (not is_replied):
+    replied = (str(tweet.id) + "\n") in replies
+    if not replied:
         with open("repliedTweets.txt", "ab") as replied_tweets:
             replied_tweets.write(str(tweet.id) + "\n")
-    return is_replied
+    return replied
 
 
 def respond(tweet):  # provide translation of custom message or username
     username = tweet.user.screen_name
     text = tweet.full_text
-    if (username != "theDNABot"):  # don't respond to self
-        if (not is_replied(tweet)):
-            if ("translate" in text):
+    if username != "theDNABot":  # don't respond to self
+        if not is_replied(tweet):
+            if "translate" in text:
                 # grab everything after the "translate:"
                 expr = re.compile(".+translate")
                 start = expr.search(text).end()
@@ -182,13 +184,13 @@ def daily_tweet():
     """daily tweet multi-processing method"""
     print(CYAN + "Checking for daily tweet..." + RESET)
     while 1:
-        # if not is_tweeted_wotd():
-        tweet = WordOfTheDay.get_tweet()
-        if tweet == -1:
-            content = "Unable to print daily words "
-            alert(subject="Daily Words were too long", text=content)
-        else:
-            api.update_status(status=tweet)
+        if not is_tweeted_wotd():
+            tweet = WordOfTheDay.get_tweet()
+            if tweet == -1:
+                content = "Unable to print daily words "
+                alert(subject="Daily Words were too long", text=content)
+            else:
+                api.update_status(status=tweet)
         sleep(14400)  # 4 hour wait
 
 
