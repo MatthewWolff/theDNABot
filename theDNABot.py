@@ -1,12 +1,13 @@
-import WordOfTheDay
 import re
 import smtplib
-import tweepy
 from datetime import datetime, timedelta
-from keys import key, email_key
 from multiprocessing import Process
 from subprocess import check_output
 from time import sleep, strftime
+
+import WordOfTheDay
+import tweepy
+from keys import key, email_key
 
 # Will tweet in response to people who tweet/retweet #genetics
 # if someone tweets at bot, translate their handle, or if they ask for a custom 
@@ -106,6 +107,8 @@ def respond(tweet):  # provide translation of custom message or username
                     response += "the letters B,J,O,U,X,Z, or any emoji!"
                     error_msg = RED + "Translation for "
                     error_msg += "@%s failed - too short\n" % username + RESET
+                    with open("bot_log.txt", "ab") as bot_log:
+                        bot_log.write(error_msg)
                     print error_msg
                     return api.update_status(response, tweet.id)
 
@@ -117,11 +120,15 @@ def respond(tweet):  # provide translation of custom message or username
                     response += "figuring out how to fit so many characters in!"
                     error_msg = RED + "Translation for "
                     error_msg += "@%s failed - too long\n" % username + RESET
+                    with open("bot_log.txt", "ab") as bot_log:
+                        bot_log.write(error_msg)
                     print error_msg
                     return api.update_status(response, tweet.id)
 
                 recent = None
                 for new_tweet in to_tweet:
+                    with open("bot_log.txt", "ab") as bot_log:
+                        bot_log.write("translated " + new_tweet + "\n")
                     print YELLOW + "translated " + BOLDWHITE + new_tweet + RESET
                     recent = api.update_status(status=new_tweet,
                                                in_reply_to_status_id=(tweet.id
@@ -132,11 +139,18 @@ def respond(tweet):  # provide translation of custom message or username
                 response += double_stranded_dna(username)
                 response += "\n(%s)" % dna_to_words(words_to_dna(username))
                 if len(response) <= TWEET_MAX_LENGTH:
+                    with open("bot_log.txt", "ab") as bot_log:
+                        bot_log.write("responded  " + response + "\n")
                     print YELLOW + "responded " + BOLDWHITE + response + RESET
                 else:
                     response = "@%s, your handle is too long!\n" % username
                     response += "Try doing a custom translation instead, by tw"
                     response += "eeting at me using the keyword \"translate\"?"
+                    error_msg = RED + "Translation for "
+                    error_msg += "@%s failed - handle too long\n" % username + RESET
+                    with open("bot_log.txt", "ab") as bot_log:
+                        bot_log.write(error_msg)
+                    print error_msg
                 return api.update_status(response, tweet.id)
 
 
@@ -182,7 +196,7 @@ def alert(subject="Error Occurred", text="TheDNABot has encountered an error."):
     mail.login(email_key["username"], email_key["password"])
     mail.sendmail(email_key["username"], email_key["destination"], content)
     mail.close()
-    print(BOLDWHITE + "ERROR OCCURRED, EMAIL SENT" + RESET)
+    print(RED + "ERROR OCCURRED, EMAIL SENT" + RESET)
 
 
 def daily_tweet():
@@ -195,7 +209,12 @@ def daily_tweet():
                 content = "Unable to print daily words "
                 alert(subject="Daily Words were too long", text=content)
             else:
-                api.update_status(status=tweet)
+                try:
+                    api.update_status(status=tweet)
+                except tweepy.TweepError:
+                    print(RED + "Duplicate Word of Day ERROR" + RESET)
+                    alert(Subject="Duplicate Daily Word", text="Could not tweet:\n" + tweet)
+
         sleep(14400)  # 4 hour wait
 
 
@@ -210,12 +229,12 @@ def check_tweets():
 
 
 if __name__ == '__main__':
-    is_waking_hours()
     wotd = Process(target=daily_tweet)
     wotd.start()
     tweet_poll = Process(target=check_tweets)
     tweet_poll.start()
 
 
-    # nohup python theDNABot.py &
-    # tail -f nohup.out
+
+    # python theDNABot.py >>& bot_log.txt  ((tcsh specific))
+    # tail -f bot_log.txt
