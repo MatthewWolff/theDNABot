@@ -211,9 +211,10 @@ def daily_tweet():
             else:
                 try:
                     api.update_status(status=tweet)
-                except tweepy.TweepError:
+                except tweepy.TweepError as e:
                     print(RED + "Duplicate Word of Day ERROR" + RESET)
-                    alert(Subject="Duplicate Daily Word", text="Could not tweet:\n" + tweet)
+                    content = "Could not tweet:\n" + e.api_code + "\n" + tweet
+                    alert(Subject="Duplicate Daily Word?", text=content)
 
         sleep(14400)  # 4 hour wait
 
@@ -222,9 +223,13 @@ def check_tweets():
     """tweet upkeep multi-processing method"""
     print(CYAN + "Beginning polling...\n" + RESET)
     while 1:
-        for tweet in tweepy.Cursor(api.search, q='@theDNABot -filter:retweets',
-                                   tweet_mode="extended").items():
-            respond(tweet)
+        try:
+            for tweet in tweepy.Cursor(api.search, q='@theDNABot -filter:retweets',
+                                       tweet_mode="extended").items():
+                respond(tweet)
+        except tweepy.TweepError as e:
+            print RED + e.api_code + RESET
+
         sleep(30)
 
 
@@ -236,5 +241,21 @@ if __name__ == '__main__':
 
 
 
-    # python theDNABot.py >>& bot_log.txt  ((tcsh specific))
-    # tail -f bot_log.txt
+
+
+
+# sudo apt-get install tcsh
+# tcsh
+# sudo apt-get install r-base &
+# sudo pip install tweepy &
+# sudo pip install urllib2 &
+# sudo pip install beautifulsoup4 &
+# #
+#
+# matthewsftp
+# put *.py *.txt *.r
+# exit
+# #
+#
+# nohup python theDNABot.py >>& bot_log.out &  ((tcsh specific))
+# tail -f bot_log.txt
