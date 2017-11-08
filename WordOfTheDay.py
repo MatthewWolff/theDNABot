@@ -11,7 +11,7 @@ BOLDWHITE = "\033[1m\033[37m"
 PURPLE = "\033[35m"
 YELLOW = "\033[33m"
 
-TWEET_MAX_LENGTH = 140
+TWEET_MAX_LENGTH = 280
 
 
 def get_wotd(date):
