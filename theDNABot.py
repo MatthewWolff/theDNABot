@@ -21,7 +21,7 @@ auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
 auth.set_access_token(access_token, access_token_secret)
 api = tweepy.API(auth)
 
-TWEET_MAX_LENGTH = 140
+TWEET_MAX_LENGTH = 280
 
 RED = "\033[31m"
 RESET = "\033[0m"
