@@ -238,24 +238,4 @@ if __name__ == '__main__':
     wotd.start()
     tweet_poll = Process(target=check_tweets)
     tweet_poll.start()
-
-
-
-
-
-
-# sudo apt-get install tcsh
-# tcsh
-# sudo apt-get install r-base &
-# sudo pip install tweepy &
-# sudo pip install urllib2 &
-# sudo pip install beautifulsoup4 &
-# #
-#
-# matthewsftp
-# put *.py *.txt *.r
-# exit
-# #
-#
-# nohup python theDNABot.py >>& bot_log.out &  ((tcsh specific))
-# tail -f bot_log.txt
+    
