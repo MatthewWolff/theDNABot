@@ -1,13 +1,13 @@
+import WordOfTheDay
 import re
 import smtplib
+import tweepy
 from datetime import datetime, timedelta
+from keys import key, email_key
 from multiprocessing import Process
 from subprocess import check_output
 from time import sleep, strftime
-
-import WordOfTheDay
-import tweepy
-from keys import key, email_key
+from tweepy import TweepError
 
 # Will tweet in response to people who tweet/retweet #genetics
 # if someone tweets at bot, translate their handle, or if they ask for a custom 
@@ -55,15 +55,19 @@ def get_date(date_string):
 def is_tweeted_wotd():
     current_day = get_date(strftime("%Y-%m-%d"))
     for status in tweepy.Cursor(api.user_timeline).items():
-        tweeted_at = status.created_at - timedelta(hours=5)  # twitter is ahead
-        creation_day_raw = str(tweeted_at)[:len(strftime("%Y-%m-%d"))]
-        creation_day = get_date(creation_day_raw)
-
+        creation_day = get_twitter_time(status)
         if "Daily #DNA: " in status.text and current_day == creation_day:
             return True
         elif creation_day < current_day:  # passed through relevant timeframe
             return False
     return False
+
+
+def get_twitter_time(status):
+    tweeted_at = status.created_at - timedelta(hours=5)  # twitter is ahead
+    creation_day_raw = str(tweeted_at)[:len(strftime("%Y-%m-%d"))]
+    creation_day = get_date(creation_day_raw)
+    return creation_day
 
 
 def is_waking_hours():
@@ -81,14 +85,9 @@ def clear_tweets():
             print "Failed to delete:", status.id
 
 
-def is_replied(tweet):  # check if replied. if not, add to list and reply
-    with open("repliedTweets.txt", "rb") as replied_tweets:
-        replies = replied_tweets.readlines()
-    replied = (str(tweet.id) + "\n") in replies
-    if not replied:
-        with open("repliedTweets.txt", "ab") as replied_tweets:
-            replied_tweets.write(str(tweet.id) + "\n")
-    return replied
+def is_replied(tweet):  # check if replied. favorite it and reply
+    favorites = [x.id for x in api.favorites()]
+    return tweet.id in favorites
 
 
 def respond(tweet):  # provide translation of custom message or username
@@ -96,62 +95,102 @@ def respond(tweet):  # provide translation of custom message or username
     text = tweet.full_text
     if username != "theDNABot":  # don't respond to self
         if not is_replied(tweet):
-            if "translate" in text:
-                # grab everything after the "translate:"
-                expr = re.compile(".+translate")
-                start = expr.search(text).end()
-                translated = words_to_dna(text[start:len(text)])
-                if len(translated) < 3:
-                    response = "@{0} Sorry @{0}, ".format(username)
-                    response += "the translation was too short. Try avoiding "
-                    response += "the letters B,J,O,U,X,Z, or any emoji!"
-                    error_msg = RED + "Translation for "
-                    error_msg += "@%s failed - too short\n" % username + RESET
-                    with open("bot_log.txt", "ab") as bot_log:
-                        bot_log.write(error_msg)
-                    print error_msg
-                    return api.update_status(response, tweet.id)
+            try:
+                if "translate" in text:
+                    # grab everything after the "translate:"
+                    expr = re.compile(".+translate")
+                    start = expr.search(text).end()
+                    translated = words_to_dna(text[start:len(text)])
+                    if len(translated) < 3:
+                        error_msg, response = too_short_err(username)
+                        print error_msg
+                        return api.update_status(response, tweet.id)
 
-                # translated can be up 3 tweets of text... break apart and reply
-                to_tweet = divide_tweet(translated, username)
-                if to_tweet == -1:
-                    response = "@{0} Sorry @{0}, ".format(username)
-                    response += "the translation was too long. But congrats on "
-                    response += "figuring out how to fit so many characters in!"
-                    error_msg = RED + "Translation for "
-                    error_msg += "@%s failed - too long\n" % username + RESET
-                    with open("bot_log.txt", "ab") as bot_log:
-                        bot_log.write(error_msg)
-                    print error_msg
-                    return api.update_status(response, tweet.id)
+                    # translated can be up 3 tweets of text... break apart and reply
+                    to_tweet = divide_tweet(translated, username)
+                    if to_tweet == -1:
+                        error_msg, response = too_long_err(username)
+                        print error_msg
+                        return api.update_status(response, tweet.id)
 
-                recent = None
-                for new_tweet in to_tweet:
-                    with open("bot_log.txt", "ab") as bot_log:
-                        bot_log.write("translated " + new_tweet + "\n")
-                    print YELLOW + "translated " + BOLDWHITE + new_tweet + RESET
-                    recent = api.update_status(status=new_tweet,
-                                               in_reply_to_status_id=(tweet.id
-                                                                      if recent is None
-                                                                      else recent.id))
-            else:  # do a full convert of their handle + translate back
-                response = "@%s\n" % username
-                response += double_stranded_dna(username)
-                response += "\n(%s)" % dna_to_words(words_to_dna(username))
-                if len(response) <= TWEET_MAX_LENGTH:
-                    with open("bot_log.txt", "ab") as bot_log:
-                        bot_log.write("responded  " + response + "\n")
-                    print YELLOW + "responded " + BOLDWHITE + response + RESET
-                else:
-                    response = "@%s, your handle is too long!\n" % username
-                    response += "Try doing a custom translation instead, by tw"
-                    response += "eeting at me using the keyword \"translate\"?"
-                    error_msg = RED + "Translation for "
-                    error_msg += "@%s failed - handle too long\n" % username + RESET
-                    with open("bot_log.txt", "ab") as bot_log:
-                        bot_log.write(error_msg)
-                    print error_msg
-                return api.update_status(response, tweet.id)
+                    recent = None
+                    for new_tweet in to_tweet:
+                        document_translation(new_tweet, recent, tweet)
+                else:  # do a full convert of their handle + translate back
+                    response = reply(username, tweet.id)
+                    return api.update_status(response, tweet.id)
+            except TweepError as err:
+                document_error(tweep_err(err))
+
+
+def mark_replied(tweet_id):
+    api.create_favorite(tweet_id)
+
+
+def reply(username, tweet_id):
+    response = formulate_response(username)
+    if len(response) <= TWEET_MAX_LENGTH:
+        document_response(response)
+        print "wut"
+        mark_replied(tweet_id)
+    else:
+        error_msg, response = handle_err(username)
+        document_error(error_msg)
+    return response
+
+
+def document_response(response):
+    with open("bot_log.txt", "ab") as bot_log:
+        bot_log.write("responded  " + response + "\n")
+    print YELLOW + "responded " + BOLDWHITE + response + RESET
+
+
+def formulate_response(username):
+    response = "@%s\n" % username
+    response += double_stranded_dna(username)
+    response += "\n(%s)" % dna_to_words(words_to_dna(username))
+    return response
+
+
+def handle_err(username):
+    response = "@%s, your handle is too long!\n" % username
+    response += "Try doing a custom translation instead, by tw"
+    response += "eeting at me using the keyword \"translate\"?"
+    error_msg = RED + "Translation for "
+    error_msg += "@%s failed - handle too long\n" % username + RESET
+    with open("bot_log.txt", "ab") as bot_log:
+        bot_log.write(error_msg)
+    return error_msg, response
+
+
+def document_translation(new_tweet, recent, tweet):
+    with open("bot_log.txt", "ab") as bot_log:
+        bot_log.write("translated " + new_tweet + "\n")
+    print YELLOW + "translated " + BOLDWHITE + new_tweet + RESET
+    api.update_status(status=new_tweet,
+                      in_reply_to_status_id=(tweet.id if recent is None else recent.id))
+
+
+def too_long_err(username):
+    response = "@{0} Sorry @{0}, ".format(username)
+    response += "the translation was too long. But congrats on "
+    response += "figuring out how to fit so many characters in!"
+    error_msg = RED + "Translation for "
+    error_msg += "@%s failed - too long\n" % username + RESET
+    with open("bot_log.txt", "ab") as bot_log:
+        bot_log.write(error_msg)
+    return error_msg, response
+
+
+def too_short_err(username):
+    response = "@{0} Sorry @{0}, ".format(username)
+    response += "the translation was too short. Try avoiding "
+    response += "the letters B,J,O,U,X,Z, or any emoji!"
+    error_msg = RED + "Translation for "
+    error_msg += "@%s failed - too short\n" % username + RESET
+    with open("bot_log.txt", "ab") as bot_log:
+        bot_log.write(error_msg)
+    return error_msg, response
 
 
 def divide_tweet(long_tweet, username):
@@ -197,6 +236,7 @@ def alert(subject="Error Occurred", text="TheDNABot has encountered an error."):
     mail.sendmail(email_key["username"], email_key["destination"], content)
     mail.close()
     print(RED + "ERROR OCCURRED, EMAIL SENT" + RESET)
+    document_error("Duplicate word of day :(")
 
 
 def daily_tweet():
@@ -204,33 +244,55 @@ def daily_tweet():
     print(CYAN + "Checking for daily tweet..." + RESET)
     while 1:
         if not is_tweeted_wotd() and is_waking_hours():
-            tweet = WordOfTheDay.get_tweet()
-            if tweet == -1:
-                content = "Unable to print daily words "
-                alert(subject="Daily Words were too long", text=content)
-            else:
-                try:
-                    api.update_status(status=tweet)
-                except tweepy.TweepError as e:
-                    print(RED + "Duplicate Word of Day ERROR" + RESET)
-                    content = "Could not tweet:\n" + e.api_code + "\n" + tweet
-                    alert(Subject="Duplicate Daily Word?", text=content)
+            attempt_tweet()
 
         sleep(14400)  # 4 hour wait
 
 
+def attempt_tweet():
+    tweet = WordOfTheDay.get_tweet()
+    if tweet is -1:
+        content = "Unable to print daily words "
+        alert(subject="Daily Words were too long", text=content)
+        document_error(content)
+    else:
+        try:
+            api.update_status(status=tweet)
+        except TweepError as e:
+            print(RED + "Duplicate Word of Day ERROR" + RESET)
+            content = "Could not tweet:\n" + str(e.api_code) + "\n" + tweet
+            alert(subject="Duplicate Daily Word?", text=content)
+
+
 def check_tweets():
     """tweet upkeep multi-processing method"""
-    print(CYAN + "Beginning polling...\n" + RESET)
-    while 1:
-        try:
-            for tweet in tweepy.Cursor(api.search, q='@theDNABot -filter:retweets',
-                                       tweet_mode="extended").items():
-                respond(tweet)
-        except tweepy.TweepError as e:
-            print RED + e.api_code + RESET
+    begin()
+    while True:
+        poll()
+        sleep(60)
 
-        sleep(30)
+
+def poll():
+    try:
+        for tw in tweepy.Cursor(api.search, q="@theDNABot -filter:retweets", tweet_mode="extended").items():
+            respond(tw)
+    except tweepy.TweepError as er:
+        document_error(tweep_err(er))
+
+
+def tweep_err(e):
+    err = e[:][0][0]["message"]
+    return err
+
+
+def document_error(err):
+    print RED + err + RESET
+    with open("bot_log.txt", "ab") as bot_log:
+        bot_log.write("ERR: " + err + "\n")
+
+
+def begin():
+    print(CYAN + "Beginning polling...\n" + RESET)
 
 
 if __name__ == '__main__':
@@ -238,24 +300,3 @@ if __name__ == '__main__':
     wotd.start()
     tweet_poll = Process(target=check_tweets)
     tweet_poll.start()
-
-
-
-
-
-
-# sudo apt-get install tcsh
-# tcsh
-# sudo apt-get install r-base &
-# sudo pip install tweepy &
-# sudo pip install urllib2 &
-# sudo pip install beautifulsoup4 &
-# #
-#
-# matthewsftp
-# put *.py *.txt *.r
-# exit
-# #
-#
-# nohup python theDNABot.py >>& bot_log.out &  ((tcsh specific))
-# tail -f bot_log.txt
