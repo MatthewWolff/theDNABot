@@ -131,7 +131,6 @@ def reply(username, tweet_id):
     response = formulate_response(username)
     if len(response) <= TWEET_MAX_LENGTH:
         document_response(response)
-        print "wut"
         mark_replied(tweet_id)
     else:
         error_msg, response = handle_err(username)
