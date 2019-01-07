@@ -34,17 +34,17 @@ PURPLE = "\033[35m"
 
 
 def words_to_dna(string):
-    return check_output(["Rscript wordsToDNA.r " + string.replace("'", "")],
+    return check_output(["Rscript auxiliary/wordsToDNA.r " + string.replace("'", "")],
                         shell=True).decode("utf-8")
 
 
 def dna_to_words(string):
-    return check_output(["Rscript dnaToWords.r " + string.replace("'", "")],
+    return check_output(["Rscript auxiliary/dnaToWords.r " + string.replace("'", "")],
                         shell=True).decode("utf-8")
 
 
 def double_stranded_dna(string):
-    return check_output(["Rscript doubleStrandedDNA.r " + string.replace("'", "")],
+    return check_output(["Rscript auxiliary/doubleStrandedDNA.r " + string.replace("'", "")],
                         shell=True).decode("utf-8")
 
 
