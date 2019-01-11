@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
 import WordOfTheDay
 import re
 import smtplib
 import tweepy
 from datetime import datetime, timedelta
 from keys import key, email_key
-from multiprocessing import Process
 from subprocess import check_output
 from time import sleep, strftime
 from tweepy import TweepError
@@ -288,9 +286,3 @@ def log(message):
     with open(LOGGING_FILE, "a") as log_file:
         log_file.write(f"{strftime('[%Y-%m-%d] @ %H:%M:%S')} {message}")
 
-
-if __name__ == "__main__":
-    wotd = Process(target=daily_tweet)
-    wotd.start()
-    tweet_poll = Process(target=check_tweets)
-    tweet_poll.start()
