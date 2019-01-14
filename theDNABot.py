@@ -284,5 +284,5 @@ def log_error(err):
 
 def log(message):
     with open(LOGGING_FILE, "a") as log_file:
-        log_file.write(f"{strftime('[%Y-%m-%d] @ %H:%M:%S')} {message}")
+        log_file.write(f"{strftime('[%Y-%m-%d] @ %H:%M:%S')} {message}\n")
 
