@@ -104,13 +104,15 @@ def respond(tweet):  # provide translation of custom message or username
     """
     username = tweet.user.screen_name
     text = tweet.full_text
-    if username != "theDNABot" and not is_replied(tweet):  # don't respond to self
+    if username != "theDNABot":  # don't respond to self
         try:
             if "translate" in text:
                 # grab everything after the "translate:"
-                expr = re.compile(".+translate")
+                expr = re.compile(".+translate:?")
                 start = expr.search(text).end()
-                translated = words_to_dna(text[start:len(text)])
+                translated = double_stranded_dna(text[start:])
+                if len(translated) > TWEET_MAX_LENGTH:
+                    translated = words_to_dna(text[start:])
                 if len(translated) < 3:
                     response = too_short_err(username)
                     return api.update_status(response, tweet.id)
